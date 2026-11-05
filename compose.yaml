@@ -11,6 +11,7 @@ services:
     volumes:
       - jobs:/data/jobs
       - cache:/home/dopplergeist/.cache/dopplergeist
+      - ./config/operator.json:/config/operator.json:ro
     command:
       - serve
       - --host
@@ -19,6 +20,8 @@ services:
       - "8765"
       - --jobs
       - /data/jobs
+      - --config
+      - /config/operator.json
       - --online
       - --max-runtime
       - "14400"

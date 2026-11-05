@@ -1,0 +1,7 @@
+{
+  "search_workers": 2,
+  "search_budget": {
+    "max_tracks_per_tile": 4000,
+    "max_track_samples_per_tile": 1000000
+  }
+}
