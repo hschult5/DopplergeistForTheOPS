@@ -1,0 +1,35 @@
+name: dopplergeist-ops
+
+services:
+  dopplergeist:
+    build:
+      context: .
+    image: dopplergeist-ops:local
+    init: true
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - jobs:/data/jobs
+      - cache:/home/dopplergeist/.cache/dopplergeist
+    command:
+      - serve
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8765"
+      - --jobs
+      - /data/jobs
+      - --online
+      - --max-runtime
+      - "14400"
+    stop_grace_period: 30s
+
+# Reuse the existing local installation's data. External volumes are not
+# removed by `docker compose down --volumes`.
+volumes:
+  jobs:
+    external: true
+    name: dopplergeist-ops-jobs
+  cache:
+    external: true
+    name: dopplergeist-ops-cache

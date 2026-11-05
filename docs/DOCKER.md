@@ -1,5 +1,50 @@
 # Run with Docker
 
+## Local checkout with Docker Compose
+
+The repository's [compose.yaml](../compose.yaml) builds your local checkout and
+runs the browser application at **http://127.0.0.1:8765**. It enables public data
+downloads and allows four hours per job, matching the local OPS installation.
+The default upload limit remains 100 MiB. Run these commands from the repository
+root in PowerShell or a shell with Docker Compose available.
+
+If the earlier standalone `dopplergeist-ops` container is running, let any active
+analysis finish before stopping it to release the port and job-store lock:
+
+```powershell
+docker stop --time 30 dopplergeist-ops
+```
+
+The Compose file reuses the external volumes `dopplergeist-ops-jobs` and
+`dopplergeist-ops-cache`, preserving existing uploads, results and downloads.
+They already exist for the OPS installation. On a fresh installation, create them
+first (these commands also safely reuse existing volumes):
+
+```powershell
+docker volume create dopplergeist-ops-jobs
+docker volume create dopplergeist-ops-cache
+docker compose up --build -d
+```
+
+For routine operation:
+
+```powershell
+docker compose ps
+docker compose logs --tail 50 -f
+docker compose stop
+docker compose start
+```
+
+After changing application code, run `docker compose up --build -d` again.
+The image contains a build-time snapshot; local edits are not mounted live.
+Recreating the service can interrupt an active job, so finish or cancel it first.
+`docker compose down` removes the Compose container and network, but retains the
+external data volumes. Do not run the old standalone container alongside Compose:
+both use the same port and persistent job directory. Keep the old container
+stopped; no migration or deletion is required.
+
+## Published image or standalone Docker
+
 Pull the published `main` image from GitHub Container Registry:
 
 ```bash
