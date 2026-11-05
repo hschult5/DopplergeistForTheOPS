@@ -3,10 +3,11 @@
 Only decoded audio is read. Proposals are acoustic evidence, not proof of an
 aircraft identity. No straight-pass speed/slant fit is required for acceptance.
 """
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
 from statistics import median
+from tempfile import TemporaryDirectory
 
 import numpy as np
 from scipy import ndimage, optimize, signal
@@ -269,7 +270,7 @@ def _stitch_fragments(paths, settings, diagnostics=None):
     return result
 
 
-def discover_events(recording, *, output_dir=None, settings=None, plot_summary=True, plot_event_details=False):
+def _discover_baseline_events(recording, *, output_dir=None, settings=None, plot_summary=True, plot_event_details=False):
     """Return shared DetectedEvent dictionaries from a disk-backed recording.
 
     Fixed defaults scan 40–1600 Hz in overlapping chunks; no event hints, flight
@@ -347,6 +348,61 @@ def discover_events(recording, *, output_dir=None, settings=None, plot_summary=T
             if plot_event_details:
                 _plot_event(recording, group, event, settings, output / f"{event['event_id']}.png")
     return events
+
+
+def discover_events(recording, *, output_dir=None, settings=None, plot_summary=True, plot_event_details=False):
+    from .advanced_discovery import discover
+    from .intake import intake_recording
+
+    settings = settings or DiscoverySettings()
+    if settings != DiscoverySettings():
+        raise ValueError("Custom discovery settings are not supported")
+    if recording.metadata["sample_rate_hz"] != 4000 or recording.source_path is None:
+        raise ValueError("Discovery requires a 4000 Hz intake recording with its original audio source")
+
+    def run(output):
+        output.mkdir(parents=True, exist_ok=True)
+        if (output / "discovery.json").exists():
+            raise FileExistsError("Discovery output exists; use a new output directory")
+        auxiliary = intake_recording(recording.source_path, output / "intake_high", sample_rate_hz=24000)
+        if auxiliary.metadata["source_sha256"] != recording.metadata["source_sha256"]:
+            raise ValueError("Audio source changed between intake and discovery")
+        result = discover(recording, output, "ridge_dp_accel_broad_final_v25", aux_recording=auxiliary)
+        tracks = {event["event_id"]: event for event in result["raw_events"]}
+        tracks.update({event["event_id"]: event for event in result["verified_tracks"]})
+        events, groups = [], []
+        for proposal in result["events"]:
+            group = []
+            for event_id in proposal["raw_event_ids"]:
+                track = tracks[event_id]
+                event = {key: track[key] for key in ("event_id", "start_s", "end_s", "band_hz", "ridge", "quality") if key in track}
+                event["harmonic_group_id"] = proposal["event_id"]
+                frequencies = [point["frequency_hz"] for point in event["ridge"]]
+                event["band_hz"] = [min(event["band_hz"][0], min(frequencies)), max(event["band_hz"][1], max(frequencies))]
+                events.append(validate_event(event))
+                group.append(np.array([[p["time_s"], p["frequency_hz"], p["weight"]] for p in event["ridge"]]))
+            groups.append(group)
+        if output_dir is not None:
+            baseline_diagnostics = json.loads((output / "baseline-tracks/discovery.json").read_text())
+            (output / "discovery.json").write_text(json.dumps({"source_sha256": recording.metadata["source_sha256"],
+                "settings": asdict(settings), "sequence_settings": result["sequence_settings"],
+                "events": events, "proposals": result["events"], "chunks": baseline_diagnostics["chunks"],
+                "fragment_links": baseline_diagnostics["fragment_links"],
+                "harmonic_ridges": [[points.tolist() for points in group] for group in groups],
+                "scope": "automatic acoustic proposals; aircraft identity unconfirmed"}, indent=2, allow_nan=False) + "\n")
+            if plot_summary:
+                _plot_groups(groups, output / "discovery.png", recording.metadata["duration_s"], settings.max_gap_s)
+            if plot_event_details:
+                plot_settings = replace(settings, max_frequency_hz=8000.)
+                for event in events:
+                    points = np.array([[p["time_s"], p["frequency_hz"], p["weight"]] for p in event["ridge"]])
+                    _plot_event(auxiliary, [points], event, plot_settings, output / f"{event['event_id']}.png")
+        return events
+
+    if output_dir is not None:
+        return run(Path(output_dir))
+    with TemporaryDirectory(prefix="doppler-discovery-") as temporary:
+        return run(Path(temporary))
 
 
 def _plot_groups(groups, path, duration, max_gap_s=2.0):

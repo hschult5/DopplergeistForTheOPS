@@ -8,7 +8,7 @@
 <div class="layout">
 <section class="panel" aria-labelledby="upload-heading"><h2 id="upload-heading">New analysis</h2><form id="upload-form">
 <p id="data-setup" class="notice" hidden></p>
-<label class="drop" for="audio"><span class="upload-symbol" aria-hidden="true">↑</span><strong>Choose an MP3 recording</strong><span id="file-label">Your original file is preserved with the job.</span><input id="audio" name="audio" type="file" accept=".mp3,audio/mpeg,.wav,.flac,.m4a,.ogg" required></label>
+<label class="drop" for="audio"><span class="upload-symbol" aria-hidden="true">↑</span><strong>Choose an audio recording</strong><span id="file-label">Supported formats: MP3, WAV, FLAC, M4A, and OGG. Your original file is preserved with the job.</span><input id="audio" name="audio" type="file" accept=".mp3,audio/mpeg,.wav,.flac,.m4a,.ogg" required></label>
 <fieldset><legend>When did the recording start?</legend><p class="help">Enter UTC, including the date. A window is allowed. File creation and upload times do not establish recording time. Leave blank if unknown; analysis will request this evidence before searching.</p><label for="start">Earliest start (UTC)</label><input id="start" type="datetime-local" step="1"><label for="end">Latest start (UTC)</label><input id="end" type="datetime-local" step="1"><label for="time-source">How is this time known? <span class="muted">Optional</span></label><input id="time-source" type="text" maxlength="500" placeholder="For example, recorder clock synchronized before recording"></fieldset>
 <fieldset class="search-region">
 <legend>Search area</legend>

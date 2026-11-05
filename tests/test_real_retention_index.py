@@ -10,6 +10,7 @@ from dopplergeist.tiled_search import merge_candidates
 def damage_mode_index(path, missing_id, replacement_id):
     """Replace only the tiny index leaf; leave the real records/checksums intact."""
     with sqlite3.connect(path) as db:
+        db.execute("CREATE INDEX IF NOT EXISTS mode_index ON records(mode_id)")
         page_size = db.execute("PRAGMA page_size").fetchone()[0]
         root = db.execute("SELECT rootpage FROM sqlite_master WHERE name='mode_index'").fetchone()[0]
         entries = db.execute("SELECT rowid,mode_id FROM records NOT INDEXED").fetchall()

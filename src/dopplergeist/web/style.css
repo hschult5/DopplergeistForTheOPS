@@ -9,3 +9,5 @@
 .validation-error{color:#ffb9ac;font-size:12px;line-height:1.6}
 .leaflet-control-attribution,.leaflet-control-attribution a{color:#16334b}
 .leaflet-container a.leaflet-control-zoom-in,.leaflet-container a.leaflet-control-zoom-out{color:#16334b}
+
+.coordinate-copy{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px}

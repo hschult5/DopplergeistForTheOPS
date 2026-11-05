@@ -112,10 +112,28 @@ def _cpa_rows(tracks, observers, point_ids, max_distance, c=343.0, step_s=2.0, c
     return _ordered_cpa_rows(rows, step_s)
 
 
+def _bounded_cpa_sample_range(sample_time, receive_time_bounds, max_distance, c, step_s):
+    """Return the exact global-lattice slice used by a bounded CPA query."""
+    if receive_time_bounds is None:
+        return None
+    try:
+        padding = 4 * step_s
+        lower = receive_time_bounds[0] - max_distance / c - padding
+        upper = receive_time_bounds[1] + padding
+        if not (math.isfinite(lower) and math.isfinite(upper) and lower <= upper):
+            return None
+    except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+        return None
+    first = max(0, int(np.searchsorted(sample_time, lower, side="left")) - 1)
+    last = min(len(sample_time), int(np.searchsorted(sample_time, upper, side="right")) + 1)
+    return first, last
+
+
 class _PreparedCPATrack:
     """One validated track/step, reused only across one call's receiver chunks."""
 
-    def __init__(self, track, c, step_s, *, _sample_cache=None, motion_observers=None, max_distance=None):
+    def __init__(self, track, c, step_s, *, _sample_cache=None, motion_observers=None, max_distance=None,
+                 receive_time_bounds=None):
         self.motion_support = None
         motion_error = None
         try:
@@ -138,11 +156,14 @@ class _PreparedCPATrack:
         else:
             _, self.time, self.position, self.max_step = sampled
         if motion_error is not None:
+            sample_range = _bounded_cpa_sample_range(self.time, receive_time_bounds, max_distance, c, step_s)
             self.motion_support = Track._cpa_interval_exclusion(track, motion_observers, max_distance, c,
-                                                               self.time, self.position, float(self.max_step))
+                self.time, self.position, float(self.max_step), sample_range=sample_range)
             if self.motion_support is None:
                 raise motion_error
             self.motion_support["sample_step_s"] = float(step_s)
+            if sample_range is not None:
+                self.motion_support["receive_time_bounds_s"] = tuple(map(float, receive_time_bounds))
         self.lower, self.upper = self.position.min(axis=0), self.position.max(axis=0)
         self.tree = None
         self._tree_sample_range = None
@@ -151,25 +172,27 @@ class _PreparedCPATrack:
         if self.motion_support is not None:
             support = self.motion_support
             lower, upper = np.asarray(support["observer_box_ecef_m"])
+            expected_bounds = support.get("receive_time_bounds_s")
+            try:
+                requested_bounds = None if receive_time_bounds is None else tuple(map(float, receive_time_bounds))
+            except (TypeError, ValueError):
+                requested_bounds = None
+            reported_intervals = list(support["emission_intervals_s"])
+            reported_intervals.extend(support.get("outside_query_scope_intervals_s", []))
             if (not np.isfinite(max_distance) or max_distance > support["max_distance_m"]
                     or self.c != support["sound_speed_mps"] or self.step_s != support["sample_step_s"]
+                    or (expected_bounds is not None and requested_bounds != expected_bounds)
                     or not np.isfinite(observers).all() or not np.all((observers >= lower) & (observers <= upper))):
                 raise AcousticSupportError(self.track.id, "non_subsonic_motion",
-                                           emission_intervals_s=support["emission_intervals_s"])
+                                           emission_intervals_s=reported_intervals)
         rows = []
         track, t, pos, c = self.track, self.time, self.position, self.c
-        sample_first, sample_last = 0, len(t)
-        if receive_time_bounds is not None:
-            # Keep the global grid, max-step radius, bounding box and motion
-            # proof unchanged. Four steps retain both projection neighbours
-            # and the preceding raw CPA used by adjacent-row deduplication.
-            padding = 4 * self.step_s
-            lower = receive_time_bounds[0] - max_distance / c - padding
-            upper = receive_time_bounds[1] + padding
-            if math.isfinite(lower) and math.isfinite(upper) and lower <= upper:
-                sample_first = max(0, int(np.searchsorted(t, lower, side="left")) - 1)
-                sample_last = min(len(t), int(np.searchsorted(t, upper, side="right")) + 1)
-                t, pos = t[sample_first:sample_last], pos[sample_first:sample_last]
+        sample_range = _bounded_cpa_sample_range(t, receive_time_bounds, max_distance, c, self.step_s)
+        sample_first, sample_last = sample_range or (0, len(t))
+        if sample_range is not None:
+            # Four steps retain projection neighbours and the preceding raw
+            # CPA used by adjacent-row deduplication; the global lattice stays intact.
+            t, pos = t[sample_first:sample_last], pos[sample_first:sample_last]
         if len(t) < 2:
             return rows
         near=np.flatnonzero(np.all((observers>=self.lower-max_distance)&

@@ -104,6 +104,13 @@ GEOS version, preparation refuses the incomplete runtime pin.
 The runner preserves encoded inputs, exact transformation commands, actual
 job artifacts and observations for every arm. It continues after an ordinary
 arm failure. It preserves pending arms on interruption or changed inputs.
+
+Pairwise comparisons also fail if the material coverage state (search completion,
+data availability, missing-data identifiers or requested area) changes, or if
+verified pipeline/work-completion gates change. Measured elapsed time, peak memory
+and event proposal counts remain reported but are not themselves completeness
+failures. Raw coverage descriptions are retained separately. This check applies
+to newly generated reports; the recorded November 4 results are immutable.
 An unusable encoded arm still reaches the HTTP pipeline. Encoding failures
 remain explicit failures.
 

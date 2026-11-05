@@ -55,6 +55,17 @@ associations, clock trials, and retained mode
 appearances are separate. Missing or invalid fields stay unknown; they are not
 zero. There are no inferred pass rates across different units.
 
+The `trial_classification` section counts evaluated, rejected and unknown
+clock-trial visits using the scorer's disjoint visit categories. A percentage is
+shown only when **every active coarse receipt** includes all three counters plus
+the unreported-envelope counter, no envelope remains unreported, and at least
+one trial visit was recorded. Missing counters, including those in historic
+empty-tile receipts, remain unknown instead of being assumed zero. An unreported
+envelope is counted in candidate units and cannot be added to clock-trial visits.
+This is a ratio within the selected receipt population, not a nationwide
+rejection rate or an estimate of flight coverage. Time and proposal-count
+statistics are not trial denominators.
+
 Historical checkpoints do not supply stage CPU/wall percentiles, stage
 throughput, unique aircraft/sample counts, complete nonlinear fit counts, or
 global retained-mode counts. Those output fields remain `null`.

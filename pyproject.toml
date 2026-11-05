@@ -4,12 +4,34 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dopplergeist"
-version = "0.1.0"
-description = "Reproducible physics-based aircraft acoustic geolocation"
+version = "0.1.2"
+description = "Aircraft Doppler audio geolocation using historical flight tracks"
+readme = "docs/PYPI_README.md"
+keywords = ["aircraft", "doppler", "acoustic-geolocation", "audio-forensics", "ads-b", "signal-processing"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Scientific/Engineering :: Physics",
+  "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
 license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE", "licenses/MIT-legacy.txt", "src/dopplergeist/web/leaflet-license.txt"]
 requires-python = ">=3.11"
-dependencies = ["numpy", "scipy", "pandas", "soundfile", "pyproj", "rasterio", "matplotlib", "requests", "pyarrow", "shapely>=2.0"]
+dependencies = ["numpy", "scipy", "numba>=0.62.1,<0.63; sys_platform == 'darwin' and platform_machine == 'x86_64'", "numba>=0.68.1; sys_platform != 'darwin' or platform_machine != 'x86_64'", "pandas", "soundfile", "pyproj", "rasterio", "matplotlib", "requests", "pyarrow", "shapely>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/1337isnot1337/DOPPLERGEIST"
+Documentation = "https://github.com/1337isnot1337/DOPPLERGEIST/tree/main/docs"
+Source = "https://github.com/1337isnot1337/DOPPLERGEIST"
+Issues = "https://github.com/1337isnot1337/DOPPLERGEIST/issues"
+Releases = "https://github.com/1337isnot1337/DOPPLERGEIST/releases"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
@@ -25,3 +47,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_* cp314-macosx_x86_64"
+test-command = "dopplergeist --help && python -c \"import dopplergeist.advanced_discovery; from importlib.resources import files; assert files('dopplergeist.web').joinpath('index.html').is_file()\""

@@ -107,21 +107,13 @@ def main():
     discover.add_argument("--output",required=True,help="New directory for the scan and diagnostics")
     discover.add_argument("--plot-summary",action="store_true",help="Render a recording-level ridge overview")
     discover.add_argument("--plot-event-details",action="store_true",help="Render a spectrogram for each proposal")
-    discover.add_argument("--experimental-episodes",action="store_true",
-                          help="Use experimental acoustic episode reporting; not used by automatic location jobs")
-    discover.add_argument("--min-frequency-hz",type=float,help="Experimental lower frequency bound (default: 40)")
-    discover.add_argument("--max-frequency-hz",type=float,help="Experimental upper frequency bound (default: 1600)")
-    discover.add_argument("--window-s",type=float,help="Experimental spectral window in seconds (default: 2)")
-    discover.add_argument("--hop-s",type=float,help="Experimental spectral hop in seconds (default: 0.5)")
-    discover.add_argument("--detailed-candidates",action="store_true",
-                          help="Save bounded rejected-candidate measurements; requires --experimental-episodes")
     analyze=sub.add_parser("analyze",help="Automatically locate aircraft audio, or explain insufficient evidence")
     analyze.add_argument("audio")
     analyze.add_argument("--start-utc",help="Earliest UTC recording start, including explicit timezone")
     analyze.add_argument("--end-utc",help="Latest UTC recording start; defaults to earliest")
     analyze.add_argument("--time-source",help="How the recording start window was established")
-    analyze.add_argument("--country",type=str.upper,choices=("US", "DE", "ES"),
-                         help="Receiver country: US (CONUS, default), DE (Germany), or ES (Spain)")
+    analyze.add_argument("--country",type=str.upper,choices=("US", "DE", "ES", "FR", "IT"),
+                         help="Receiver country: US (CONUS, default), DE (Germany), ES (Spain), FR (metropolitan France, including Corsica), or IT (Italy, including Sicily and Sardinia)")
     analyze.add_argument("--bounds",type=float,nargs=4,metavar=("WEST", "SOUTH", "EAST", "NORTH"),
                          help="Limit the selected country profile to a WGS84 rectangle in decimal degrees")
     analyze.add_argument("--jobs",default="jobs",help="Persistent job directory")
@@ -169,34 +161,17 @@ def main():
         print(json.dumps(result[-1],indent=2))
     elif args.command=="discover":
         from .intake import intake_recording
-        overrides={name:getattr(args,name) for name in
-                   ("min_frequency_hz","max_frequency_hz","window_s","hop_s")
-                   if getattr(args,name) is not None}
-        if not args.experimental_episodes and (overrides or args.detailed_candidates):
-            parser.error("Frequency, window, hop and detailed-candidate options require --experimental-episodes")
+        from .discovery import discover_events
         output=Path(args.output)
         try:
-            intake_options={}
-            discovery_options={}
-            if args.experimental_episodes:
-                from .episode_discovery import DiscoverySettings, discover_events, required_sample_rate
-                settings=DiscoverySettings(**overrides)
-                intake_options={"sample_rate_hz":required_sample_rate(settings),"resample_filter_size":64}
-                discovery_options={"settings":settings,"detailed_candidates":args.detailed_candidates}
-            else:
-                from .discovery import discover_events
             output.mkdir(parents=True,exist_ok=False)
-            recording=intake_recording(args.audio,output/"intake",**intake_options)
+            recording=intake_recording(args.audio,output/"intake")
             events=discover_events(recording,output_dir=output/"discovery",
-                                   plot_summary=args.plot_summary,plot_event_details=args.plot_event_details,
-                                   **discovery_options)
+                                   plot_summary=args.plot_summary,plot_event_details=args.plot_event_details)
             summary={"recording":recording.metadata,"time_status":recording.time_status,
                      "events_found":len(events),
                      "groups_found":len({event.get("harmonic_group_id") or event["event_id"] for event in events}),
                      "scope":"Acoustic proposals only; aircraft identity and location are not established"}
-            if args.experimental_episodes:
-                summary.update(experimental_episodes=True,discovery_schema_version=2,
-                               canonical_proposals=summary["groups_found"],measured_child_tracks=len(events))
             (output/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
         except (OSError, ValueError) as exc:
             parser.error(f"Could not complete discovery: {exc}")
@@ -256,13 +231,15 @@ def main():
         finally:
             manager.close()
     elif args.command=="job":
-        from .jobs import read_json
+        from .jobs import read_json, status_for_display
         directory=Path(args.jobs)/args.job_id
         previous_count=previous_time=previous_fine_support_count=previous_split_count=None
+        stale_after=60.0
         try:
             while True:
                 try:
-                    value = read_json(directory/"result.json")
+                    value = status_for_display(directory, read_json(directory/"result.json"),
+                                               stale_after_s=stale_after)
                 except (OSError, ValueError) as exc:
                     parser.error(f"Could not read job {args.job_id}: {exc}")
                 if not args.watch:
@@ -280,10 +257,12 @@ def main():
                 progress=value.get("progress")
                 result_age=max(0.0,wall_now-(directory/"result.json").stat().st_mtime)
                 age_text=lambda seconds: f"{seconds:.0f}s" if seconds<60 else f"{seconds/60:.1f}m"
-                stale_after=max(60.0,args.interval*3)
-                progress_stale=" (stale)" if result_age>stale_after else ""
-                progress_text=(f", overall progress {progress:.1%}{progress_stale}"
-                               if isinstance(progress,(int,float)) and math.isfinite(progress) else "")
+                progress_stale=value.get("progress_stale", False)
+                if progress_stale:
+                    progress_text=f", overall progress hidden (last update {age_text(result_age)} ago)"
+                else:
+                    progress_text=(f", overall progress {progress:.1%}"
+                                   if isinstance(progress,(int,float)) and math.isfinite(progress) else "")
                 stage_message=value.get("message")
                 activity_text=(f", {stage_message}"
                                if value.get("stage") in {"acquisition", "search", "refinement", "decision"}

@@ -76,6 +76,12 @@ PREPARED_DATA_ACCESS_EQUIVALENCE = {
 # #329 adds a CPA-only support method without changing Track initialization,
 # decoded observations, velocities, or prepared payload construction.
 PREPARED_GEOMETRY_EQUIVALENCE = {
+    # Time-scoped CPA exclusion changes the proof's query scope, not the
+    # prepared observation payload, interpolation, or track geometry.
+    "36b0cb62e11c2d50d40b5b5ac5c54ada06b7120aa9f11766bc6346c388816bf7": (
+        "aff5eb70f00766a1a3ab890d1ba33f1a4989af9cf1c4b628770a8d2a7767fd13",
+        "85336bd0e3739f890386e9f93965cefb78c4477ae2e8a4fe489353501c5e26a2",
+    ),
     # Finite-distance guards change only the exclusion proof, not prepared tracks.
     "76bb80b7e3c9d19246a2dd6095795955a1420c54d1b0cea99b635c6005dc728c": (
         "aff5eb70f00766a1a3ab890d1ba33f1a4989af9cf1c4b628770a8d2a7767fd13",

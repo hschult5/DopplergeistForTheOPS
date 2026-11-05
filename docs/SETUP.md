@@ -2,12 +2,39 @@
 
 ## Requirements
 
-- Python 3.11 or newer. Fresh Linux environments were checked with Python 3.12.15
+- Python 3.11 or newer. Intel Macs require Python 3.11–3.13. Fresh Linux environments were checked with Python 3.12.15
   and 3.14.8 for this checkpoint; CI also exercises the declared Python 3.11 minimum.
 - `ffmpeg` and `ffprobe` on PATH. The MP3 smoke tests use ffmpeg's `libmp3lame`
   encoder. Install the normal ffmpeg package for your operating system.
 - GitHub CLI (`gh`) with access to this repository when
   downloading the checkpoint assets. Local/offline runs do not require GitHub access.
+
+## Install the CLI without a checkout
+
+After the initial PyPI release has been published, the shortest supported installation is:
+
+```bash
+pipx install dopplergeist
+dopplergeist --version
+dopplergeist --help
+```
+
+Or install the Python distribution into an existing environment with `python -m pip install dopplergeist`. The [PyPI publication guide](PYPI.md) describes the first-release setup and status. FFmpeg and ffprobe must be installed separately.
+
+Until that first PyPI upload, or to install the latest source commit directly, use `pipx` with the GitHub repository:
+
+```bash
+pipx install 'git+https://github.com/1337isnot1337/DOPPLERGEIST.git'
+dopplergeist --version
+dopplergeist --help
+```
+
+Install `pipx` and Git using your operating system's package manager first.
+The audio commands also require `ffmpeg` and `ffprobe` on `PATH`. This installs
+the console command without cloning the project into your working directory.
+The local upload workflow and its recording-time/data requirements are described
+in [PRODUCT.md](PRODUCT.md). For development, pinned environments, and checkpoint
+reproduction, use the checkout-based instructions below.
 
 Nix users can enter the development shell first with `nix develop`. It supplies
 Python 3.12, ffmpeg, GitHub CLI, and native build libraries; install the Python
@@ -29,13 +56,13 @@ run under the current real-world-only policy in [AGENTS.md](../AGENTS.md#real-wo
 
 ## Pinned Python 3.14 reproduction
 
-`requirements/py314-linux.lock` records all installed runtime/test dependency
+`docs/reproducibility/py314-linux.lock` records all installed runtime/test dependency
 versions from the fresh Linux Python 3.14 environment. It is a platform/version
 snapshot, not a claim that those same package versions support Python 3.11.
 
 ```bash
 python3.14 -m venv .venv
-.venv/bin/python -m pip install -r requirements/py314-linux.lock
+.venv/bin/python -m pip install -r docs/reproducibility/py314-linux.lock
 .venv/bin/python -m pip install --no-deps -e .
 .venv/bin/dopplergeist --help
 ```

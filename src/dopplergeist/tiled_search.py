@@ -75,10 +75,12 @@ class SearchBudget:
     refine_finalists: int = 10
     cpa_step_s: float = 2.0
     max_tiles: int | None = None
+    max_tile_evaluations: int | None = None
 
     def __post_init__(self):
         integer_fields = ("tile_cells", "max_tracks_per_tile", "max_track_samples_per_tile", "max_cpa_rows",
-                          "max_candidates_per_tile", "top_k", "refine_finalists", "max_tiles")
+                          "max_candidates_per_tile", "top_k", "refine_finalists", "max_tiles",
+                          "max_tile_evaluations")
         for name, value in asdict(self).items():
             if value is not None and (not np.isfinite(value) or value <= 0):
                 raise ValueError(f"{name} must be positive and finite")
@@ -586,7 +588,8 @@ def _score(points, tracks, events, measurements, budget, parameters, filters, st
             if error.reason == "non_subsonic_motion":
                 try:
                     prepared = _PreparedCPATrack(track, parameters.get("c", 343.0), budget.cpa_step_s,
-                                                motion_observers=observers, max_distance=radius)
+                                                motion_observers=observers, max_distance=radius,
+                                                receive_time_bounds=receive_bounds)
                     if prepared.motion_support is None:
                         raise error
                     track_batches, track_rows = _track_cpa_batches(prepared, observers, point_ids, radius,
@@ -900,22 +903,27 @@ def search_national(indexes, terrain, events, measurements, *, time_range_s, out
                            for _, cells in itertools.islice(
                                grid_tiles(bounds, budget.spacing_m, budget.tile_cells, crs), budget.max_tiles))
     last_progress = 0.0
+    last_progress_report = time.monotonic()
 
     def report_search_progress(fraction, *, force=False):
-        nonlocal last_progress
+        nonlocal last_progress, last_progress_report
         if search_progress is None:
             return
         fraction = min(1.0, max(0.0, float(fraction)))
-        if fraction > last_progress and (force or fraction - last_progress >= 0.025):
+        now = time.monotonic()
+        if fraction > last_progress and (
+            force or fraction - last_progress >= 0.025 or now - last_progress_report >= 15.0
+        ):
             search_progress(fraction)
             last_progress = fraction
+            last_progress_report = now
 
     available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
     if workers is None:
         workers = max(1, available - 1)
     if type(workers) is not int or workers < 1:
         raise ValueError("workers must be a positive integer")
-    workers = min(workers, total, budget.max_tiles or total)
+    workers = min(workers, total, budget.max_tiles or total, budget.max_tile_evaluations or total)
     # GDAL virtual/in-memory datasets can be valid in the parent but cannot
     # necessarily be reopened in a spawned process. Preserve the serial path
     # for those inputs instead of turning a working search into a failed one.
@@ -996,6 +1004,7 @@ def search_national(indexes, terrain, events, measurements, *, time_range_s, out
     elif has_fine_checkpoints:
         raise DataUnavailable("Fine-stage checkpoint configuration is missing")
     began, ranked, failures, done, processed_cells, resumed, points_searched = time.monotonic(), [], [], 0, 0, 0, 0
+    tile_evaluations_started, tile_budget_exhausted = 0, False
     counted_clock_cells = set()
     support = dict(unsupported_cpa_track_evaluations=0, unclassified_score_candidates=0,
                    bounded_score_candidates=0, unbounded_score_candidates=0,
@@ -1061,11 +1070,18 @@ def search_national(indexes, terrain, events, measurements, *, time_range_s, out
         return stage, cells, cached, None
 
     def requests_for_wave(wave, next_wave):
-        nonlocal total
+        nonlocal total, tile_evaluations_started, tile_budget_exhausted
         for tile_id, cells in wave:
             marker = output / f"split-{tile_id}.json"
             if not marker.exists():
-                yield tile_request(tile_id, cells)
+                request = tile_request(tile_id, cells)
+                if request[2] is None:
+                    if (budget.max_tile_evaluations is not None
+                            and tile_evaluations_started >= budget.max_tile_evaluations):
+                        tile_budget_exhausted = True
+                        continue
+                    tile_evaluations_started += 1
+                yield request
                 continue
             try:
                 record = json.loads(marker.read_text())
@@ -1406,10 +1422,14 @@ def search_national(indexes, terrain, events, measurements, *, time_range_s, out
     model_assessed = not (support["unsupported_cpa_track_evaluations"] or support["unbounded_score_candidates"]
                          or support["unreported_trial_envelopes"])
     model_assessed &= support["bounded_score_candidates"] == support["unclassified_score_candidates"]
-    complete = done == total and not failures and not refinement_failure and data_complete and not event_limit_applied and model_assessed
+    complete = (done == total and not failures and not refinement_failure and data_complete
+                and not event_limit_applied and model_assessed and not tile_budget_exhausted)
     finite = ledger.evidence(ranked, complete=complete, spacing_m=budget.spacing_m,
                              refine_spacing_m=min(budget.spacing_m, budget.refine_spacing_m), max_event_groups=len(events),
                              expected_stages={"coarse": done, "global": done, "fine": fine_stages, "fine-global": fine_stages})
+    if tile_budget_exhausted:
+        finite["limitations"].append(
+            "The per-invocation coarse tile-evaluation budget was exhausted; unvisited tiles remain.")
     if finite["bounded_unknown_envelopes"] != support["bounded_score_candidates"]:
         model_assessed = complete = False
         finite["complete"] = finite["pruning_accounted_for"] = False
@@ -1439,6 +1459,9 @@ def search_national(indexes, terrain, events, measurements, *, time_range_s, out
               "model_assessment_complete": model_assessed,
               "refinement_points_searched": refinement_points_searched, "refinement_points_skipped": refinement_points_skipped,
               "refinement_stages_resumed": fine_resumed,
+              "tile_work_budget": {"max_new_tile_evaluations_per_invocation": budget.max_tile_evaluations,
+                                   "new_tile_evaluations_started": tile_evaluations_started,
+                                   "exhausted": tile_budget_exhausted},
               "required_flight_bounds": flight_bounds,
               "candidate_retention_limit": budget.top_k, "alternative_modes_exhaustively_assessed": False,
               "finite_search_evidence": finite,

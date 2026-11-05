@@ -372,6 +372,46 @@ def funnel(receipts, selected):
     return {"receipt_count": len(selected), "metrics": result}
 
 
+
+def trial_classification(receipts, selected):
+    """Rates only over explicitly accounted clock-trial visits in the same receipts.
+
+    A missing counter or unreported trial envelope prevents a defensible
+    fraction for the selected receipt population. Envelope counts are candidate
+    units, never added to the clock-trial denominator.
+    """
+    names = ("evaluated_trials", "rejected_trials", "unknown_trials", "unreported_trial_envelopes")
+    totals = dict.fromkeys(names, 0)
+    covered = 0
+    for tile_id in selected:
+        counts = receipts[tile_id]["value"]["metrics"]
+        if not all(nonnegative_int(counts.get(name)) for name in names):
+            continue
+        covered += 1
+        for name in names:
+            totals[name] += counts[name]
+    visits = totals["evaluated_trials"] + totals["rejected_trials"] + totals["unknown_trials"]
+    complete = covered == len(selected) and totals["unreported_trial_envelopes"] == 0
+    status = ("no_telemetry" if not covered else
+              "incomplete" if not complete else
+              "no_reported_trials" if not visits else "complete")
+    return {
+        "status": status,
+        "basis": "disjoint evaluated, rejected, and unknown clock-trial visits within active coarse receipts",
+        "selected_receipts": len(selected),
+        "receipts_with_all_trial_counters": covered,
+        "receipts_with_missing_trial_counters": len(selected) - covered,
+        "known_counters": totals if covered else None,
+        "reported_trial_visits": visits if covered else None,
+        "percent_rejected": round(100 * totals["rejected_trials"] / visits, 6)
+            if complete and visits else None,
+        "percent_unknown": round(100 * totals["unknown_trials"] / visits, 6)
+            if complete and visits else None,
+        "percent_evaluated": round(100 * totals["evaluated_trials"] / visits, 6)
+            if complete and visits else None,
+    }
+
+
 def atomic_write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     name = None
@@ -406,6 +446,15 @@ def markdown(report):
     for row in report["receipt_funnel"]["metrics"]:
         lines.append("| " + " | ".join(display(row[key]) for key in (
             "metric", "unit", "known_sum", "receipts_with_counter", "receipts_missing_or_invalid")) + " |")
+    trials = report["trial_classification"]
+    lines.extend(["", "## Reported clock-trial classifications", "",
+                  f"Telemetry status: {trials['status']}; complete-counter receipts: "
+                  f"{trials['receipts_with_all_trial_counters']}/{trials['selected_receipts']}.",
+                  "Percentages use only disjoint trial visits and are unavailable if any "
+                  "selected receipt lacks trial counters or reports an unaccounted envelope.",
+                  f"Rejected: {display(trials['percent_rejected'])}%; "
+                  f"evaluated: {display(trials['percent_evaluated'])}%; "
+                  f"unknown: {display(trials['percent_unknown'])}%."])
     lines.extend(["", "## Limits", ""] + ["- " + item for item in report["limitations"]])
     return "\n".join(lines) + "\n"
 
@@ -544,6 +593,7 @@ def main(argv=None):
               "funnel_scope": "active coarse leaves with matching geometry and producer" if grid.roots is not None
                               else "matching-producer receipts without grid/hierarchy reconciliation",
               "receipt_funnel": funnel(receipts, coverage.active),
+              "trial_classification": trial_classification(receipts, coverage.active),
               "canonical_stage_agreed_funnel": funnel(receipts, coverage.agreed)
                   if grid.roots is not None and ledger["status"] == "metadata_snapshot" else None,
               "unknown_telemetry": {key: None for key in ("unique_aircraft", "unique_track_samples", "nonlinear_fits",

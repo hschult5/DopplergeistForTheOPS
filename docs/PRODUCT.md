@@ -9,7 +9,8 @@ scope and limitations.
 
 The automatic product path is separate from the historical research `run` and
 `measure` commands. Uploads supply audio, an optional defensible UTC window for
-**sample zero**, and a declared country profile (US/CONUS by default, or Germany).
+**sample zero**, and a declared country profile (US/CONUS by default, Germany,
+Spain, metropolitan France including Corsica, or Italy).
 An optional rectangle narrows that profile. Event windows, frequency
 bands, flight IDs and ground-truth coordinates are not upload inputs.
 
@@ -86,8 +87,27 @@ The API equivalent is `"search":{"country":"DE"}`; normalized requests record
 search, parallel workers, fine grids and continuous refinement. See
 [country profiles](COUNTRIES.md) for boundary acquisition, offline use and limits.
 
+For metropolitan France including Corsica, use `analyze --country FR`, the France
+browser option, or `"search":{"country":"FR"}` in the API. Requests normalize to
+`"coverage":"france"` and use `EPSG:2154` (Lambert-93). The profile is a bounding
+envelope without a country polygon; use independently justified `--bounds` for
+a regional search. Overseas territories are outside this profile.
+
+For Italy, use `analyze --country IT`, the Italy browser option, or
+`"search":{"country":"IT"}`. Requests normalize to `"coverage":"italy"` and use
+`EPSG:7794` (RDN2008 / Italy zone, E-N). The envelope covers the mainland,
+Sicily, Sardinia and Lampedusa without a country polygon, so it also contains
+sea and border areas of neighboring countries; use independently justified
+`--bounds` for a regional search.
+
 `analyze` prints the job ID and a monitor command to standard error as soon as
-the upload is queued. `job --watch` reports the status-file progress field, the
+the upload is queued. Search progress is based on completed grid work and is
+persisted after a 2.5 percentage-point increase or at least every 15 seconds
+when another tile completes. A single long-running tile cannot report partial
+work it has not completed. The CLI and upload UI hide the percentage when an
+active job's status has not refreshed for 60 seconds; the job may still be
+processing.
+`job --watch` reports the status-file progress field, the
 count/rate of matching coarse and fine search filenames, the newest matching
 file modification age, and the job status-file age on standard error. These are
 unverified filesystem indicators: the watcher does not validate payload hashes
@@ -294,22 +314,21 @@ does not establish real terrain or altitude-datum accuracy. Its result retains
 that limitation for real recordings.
 Local overrides require prebuilt indexes and retain their actual coverage.
 
-`search_budget.max_tiles` bounds tile work. Reaching a tile, memory, data or wall
-time limit leaves incomplete coverage and cannot produce a supported national
-location. Full search completion does not prove the archive captured every real
-aircraft. Grid finalists undergo jointly constrained position/clock refinement;
-`refine_finalists` (default 5) limits physical sensitivity refinement. Unassessed
-retained approaches prevent an affirmative confidence decision.
+`search_budget.max_tiles` limits the initial root-tile prefix. Recursive
+subdivision can create more work than that root limit, so use
+`search_budget.max_tile_evaluations` to cap newly scored coarse tiles in one
+search invocation. Verified tile checkpoints do not consume that per-invocation
+allowance, allowing a later resume to continue with the same configuration.
+Exhausting the work cap leaves the result partial. Reaching a tile, memory, data
+or wall-time limit leaves incomplete coverage and cannot produce a supported
+national location. Full search completion does not prove the archive captured
+every real aircraft. Grid finalists undergo jointly constrained position/clock
+refinement; `refine_finalists` (default 5) limits physical sensitivity
+refinement. Unassessed retained approaches prevent an affirmative confidence
+decision.
 
-For chunk-boundary checks on real recordings, an operator can set
-`"discovery": {"chunk_s": 120.0, "overlap_s": 60.0}` in this private configuration.
-These are the only discovery overrides supported by the product adapter. The
-existing detector validates the overlap and chunk constraints; spectral bands,
-acceptance thresholds and other scientific settings keep their defaults. The
-actual settings and analyzed chunks are saved in `discovery/discovery.json`, and
-the operator configuration hash is retained in provenance. This configuration is
-not an upload-request field. A chunk-size comparison must rerun detection and the
-pipeline; it cannot reuse final candidates as if discovery had run again.
+Discovery uses fixed detector settings. The settings and measured proposals are
+saved in `discovery/discovery.json`; custom discovery settings are rejected.
 
 An operator can add `"spectral_comparison": {}` to save a separate
 `spectral-comparison.json` artifact after refinement. This optional stage reads

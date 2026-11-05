@@ -33,16 +33,19 @@ returns `needs_input` with `required_fields: ["time_window"]` if a defensible wi
 is still unavailable. Do not fabricate a timestamp. A derived best recording start
 is a result field and must not be mislabeled independent timestamp evidence.
 
-`search.country` accepts `US` (CONUS), `DE` (Germany) or `ES` (Spain); lowercase
-ISO codes are normalized. The corresponding `search.coverage` values are
-`conus`, `germany` and `spain`.
+`search.country` accepts `US` (CONUS), `DE` (Germany), `ES` (Spain), `FR`
+(metropolitan France including Corsica) or `IT` (Italy including Sicily and
+Sardinia); lowercase ISO codes are normalized.
+The corresponding `search.coverage` values are
+`conus`, `germany`, `spain`, `france` and `italy`.
 Either country or coverage is sufficient, and contradictory values are rejected.
 Legacy `{"coverage":"conus"}` objects keep their serialized shape; the validator
 does not insert a country into old requests. Optional `bounds_wsen` further restrict
 the selected profile to `[west, south, east, north]` in longitude/latitude degrees.
 Bounds must lie inside its declared envelope. Germany's land mask further limits
-receiver points. Spain uses a bounding envelope without a country polygon and
-requires explicit bounds for a suitably regional search. Neighboring aircraft
+receiver points. Spain, metropolitan France and Italy use bounding envelopes without
+country polygons; provide explicit bounds for a suitably regional search. The
+France profile excludes overseas territories. Neighboring aircraft
 remain eligible outside the receiver area when they fall within acoustic range. The capability
 response publishes the supported catalog; see [country profiles](COUNTRIES.md).
 Actual data availability may be smaller and must be reported in provenance and

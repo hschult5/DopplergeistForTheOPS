@@ -19,11 +19,11 @@ def _digest(path):
 
 
 def _audio_identity(request, config):
-    modules = ("intake.py", "discovery.py", "audio.py", "contracts.py")
+    modules = ("intake.py", "discovery.py", "advanced_discovery.py", "audio.py", "contracts.py")
     return {"request": request, "source_sha256": _digest(request["audio_path"]),
             "discovery_settings": config.get("discovery", {}),
             "modules": {name: _digest(Path(__file__).parent / name) for name in modules},
-            "packages": {name: version(name) for name in ("numpy", "scipy")}}
+            "packages": {name: version(name) for name in ("numpy", "scipy", "numba")}}
 
 
 def _save_audio_checkpoint(output, request, config):
@@ -112,11 +112,13 @@ def analyze(request, output_dir, config=None, progress=lambda *args, **kwargs: N
     if search_workers is not None and (type(search_workers) is not int or search_workers < 1):
         return finish("failed", "invalid_configuration", "search_workers must be a positive integer.")
     if not isinstance(discovery_options, dict) or discovery_options.keys() - {"chunk_s", "overlap_s"}:
-        return finish("failed", "invalid_configuration", "Operator discovery settings support only chunk_s and overlap_s.")
+        return finish("failed", "invalid_configuration", "Only default discovery settings are supported.")
     try:
         discovery_settings = DiscoverySettings(**discovery_options)
     except (TypeError, ValueError) as exc:
         return finish("failed", "invalid_configuration", f"Invalid operator discovery settings: {exc}")
+    if discovery_settings != DiscoverySettings():
+        return finish("failed", "invalid_configuration", "Custom discovery settings are not supported.")
     spectral_options = config.get("spectral_comparison")
     spectral_keys = {"time_sweep_s", "time_step_s", "frequency_step_hz", "expansion_s",
                      "window_s", "hop_s", "max_window_s", "max_modes", "max_event_clock_trials",

@@ -623,11 +623,36 @@ def associations_equal(a, b, mapping):
     return sorted((mapping[event], flight) for event, flight in first) == sorted(zip(b["event_ids"], b["flight_ids"]))
 
 
+def coverage_state(coverage):
+    """Comparable coverage evidence; preserve raw limitations in the report."""
+    if not isinstance(coverage, dict):
+        return None
+    return {key: coverage.get(key) for key in
+        ("search_complete", "data_status", "missing_data", "requested_area")}
+
+
+def completion_state(observation):
+    """Completion gates, excluding elapsed time and performance-only counters."""
+    work = observation.get("work") or {}
+    return {
+        "verification_passed": observation.get("verification_passed"),
+        "full_pipeline_observed": observation.get("full_pipeline_observed"),
+        "full_pipeline_requirements_met": observation.get("full_pipeline_requirements_met"),
+        **{key: work.get(key) for key in
+           ("status", "unsearched_tiles", "model_assessment_complete",
+            "model_support_complete", "data_scope_complete",
+            "all_event_groups_considered",
+            "alternative_modes_exhaustively_assessed")},
+    }
+
+
 def compare_cases(left, right, protocol):
     a, b = left["observation"], right["observation"]
     tol = protocol["tolerances"]
     correspondence = event_correspondence(a["mapped_events"], b["mapped_events"], protocol)
     mapping = {m["left_event_id"]: m["right_event_id"] for m in correspondence["matches"]}
+    coverage_states = [coverage_state(a.get("coverage")), coverage_state(b.get("coverage"))]
+    completion_states = [completion_state(a), completion_state(b)]
     result = {"left": left["id"], "right": right["id"], "event_correspondence": correspondence,
         "representation_usable": bool(left.get("usability", {}).get("passed") and right.get("usability", {}).get("passed")),
         "complete_pipelines": bool(a["full_pipeline_requirements_met"] and b["full_pipeline_requirements_met"]),
@@ -636,12 +661,16 @@ def compare_cases(left, right, protocol):
         "group_count_delta": b["group_count"] - a["group_count"],
         "ridge_count_delta": b["ridge_count"] - a["ridge_count"],
         "coverage_equal": a["coverage"] == b["coverage"],
+        "coverage_state_transition": coverage_states,
+        "completion_state_transition": completion_states,
         "coverage_transition": [a["coverage"], b["coverage"]],
         "work_transition": [a["work"], b["work"]],
         "decision_provenance_equal": a["decision_provenance"] == b["decision_provenance"],
         "diagnostic_candidate_comparison": None, "accepted_location_displacement_m": None,
         "serious_accepted_jump": False, "violations": []}
     checks = {
+        "coverage_state_changed": coverage_states[0] != coverage_states[1],
+        "work_completion_changed": completion_states[0] != completion_states[1],
         "status_changed": a["status"] != b["status"],
         "reason_changed": a["reason_code"] != b["reason_code"],
         "group_count_changed": a["group_count"] != b["group_count"],

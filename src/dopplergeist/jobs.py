@@ -17,6 +17,7 @@ import uuid
 from .contracts import validate_request, validate_result
 
 TERMINAL = {"needs_input", "succeeded", "inconclusive", "failed", "cancelled"}
+PROGRESS_STALE_AFTER_S = 60.0
 
 
 def write_json(path, value):
@@ -28,6 +29,23 @@ def write_json(path, value):
 
 def read_json(path):
     return json.loads(Path(path).read_text())
+
+
+def status_for_display(job_dir, value=None, *, stale_after_s=PROGRESS_STALE_AFTER_S):
+    """Hide active-job progress percentages when the persisted status is stale."""
+    path = Path(job_dir) / "result.json"
+    shown = dict(read_json(path) if value is None else value)
+    shown["progress_stale"] = False
+    if shown.get("status") in {"queued", "running"}:
+        age = max(0.0, time.time() - path.stat().st_mtime)
+        shown["progress_age_seconds"] = age
+        shown["progress_stale"] = age > stale_after_s
+        if shown["progress_stale"]:
+            shown["progress"] = None
+            shown["message"] = (
+                f"Job remains {shown['status']}; saved progress is stale and its percentage is hidden."
+            )
+    return shown
 
 
 def result(job_dir, status, **fields):

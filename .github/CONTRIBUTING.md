@@ -9,10 +9,10 @@ real-recording evaluation, and reproducibility are welcome. Please follow the
 - Search the [issues](https://github.com/1337isnot1337/DOPPLERGEIST/issues) and
   [discussions](https://github.com/1337isnot1337/DOPPLERGEIST/discussions) for
   related work. Open an issue to discuss substantial changes or a new approach.
-- Read the [README](README.md) for current capabilities and limitations. For
-  data and research changes, see [data sources](docs/DATA_SOURCES.md),
-  [data and search](docs/DATA_AND_SCALE.md), and the relevant documentation.
-- Project agents should also follow [AGENTS.md](AGENTS.md), including its
+- Read the [README](../README.md) for current capabilities and limitations. For
+  data and research changes, see [data sources](../docs/DATA_SOURCES.md),
+  [data and search](../docs/DATA_AND_SCALE.md), and the relevant documentation.
+- Project agents should also follow [AGENTS.md](../AGENTS.md), including its
   coordination and real-world-data rules.
 
 ## Development
@@ -27,7 +27,7 @@ python -m venv .venv
 
 Make a focused change and run checks relevant to it. The standard CI workflow
 checks installation, compilation, CLI help, packaged assets and selected
-real-input behavior; see [.github/workflows/tests.yml](.github/workflows/tests.yml).
+real-input behavior; see [.github/workflows/tests.yml](workflows/tests.yml).
 Do not run the entire pytest suite indiscriminately: it includes synthetic-data
 tests. The project currently requires real recordings and real-world observations
 for empirical evaluation and prohibits new synthetic-data suites or generated
@@ -40,7 +40,7 @@ all outcomes, including failures and inconclusive results. Distinguish regional,
 selected, or assisted experiments from independent end-to-end validation; do not
 use evaluation truth as an input to an automatic search. Do not publish recordings,
 coordinates, credentials, or other sensitive material without permission. Follow
-[artifact guidance](docs/ARTIFACTS.md) and source-specific terms.
+[artifact guidance](../docs/ARTIFACTS.md) and source-specific terms.
 
 ## Pull requests
 
@@ -48,7 +48,7 @@ Open a pull request describing the problem, the change, and the checks performed
 link the relevant issue when there is one. Explain limitations and any changes to
 interfaces, data, or dependencies. Keep unrelated work separate and respond to
 review feedback. Contributions are subject to the repository's
-[license](LICENSE); the [legacy notice](licenses/MIT-legacy.txt) preserves
+[license](../LICENSE); the [legacy notice](../licenses/MIT-legacy.txt) preserves
 previously granted MIT rights, and third-party materials may have separate terms.
 
 For vulnerabilities, use the private process in [SECURITY.md](SECURITY.md), not

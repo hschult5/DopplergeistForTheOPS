@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from dopplergeist.confidence import _possible_harmonic_overlap
+from dopplergeist.confidence import _possible_harmonic_overlap, _screen_harmonic_overlap
 from dopplergeist.contracts import validate_event
 from dopplergeist import pipeline, tiled_search
 from dopplergeist.data_access import FlightIndex, content_hash
@@ -69,6 +69,18 @@ def test_real_shared_paths_keep_every_observation_and_each_separate_hypothesis()
         for first, second in zip((measurement[0].time, *measurement[1:3]),
                                  (observed[0][0].time, *observed[0][1:3])):
             np.testing.assert_array_equal(first, second)
+
+
+def test_real_overlap_screen_reports_an_exhausted_pair_budget():
+    events = recorded_events("shared")
+    screened = _screen_harmonic_overlap(events, pair_budget=0)
+    assert screened["overlap"] is None
+    assert screened["assessment"] == {
+        "exhaustive": False,
+        "conclusive": False,
+        "pairs_examined": 0,
+        "pair_budget": 0,
+    }
 
 
 @pytest.mark.parametrize("floor", [None, 0.0])

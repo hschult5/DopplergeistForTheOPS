@@ -69,7 +69,9 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
             job_id = parts[2]
             if self.command == "GET" and len(parts) == 3:
-                return self._reply(manager.get(job_id))
+                from .jobs import status_for_display
+                directory = manager.directory(job_id)
+                return self._reply(status_for_display(directory, manager.get(job_id)))
             if self.command == "GET" and parts[3:] == ["guidance"]:
                 from .guidance import explain_job
                 return self._reply(explain_job(manager.directory(job_id)))

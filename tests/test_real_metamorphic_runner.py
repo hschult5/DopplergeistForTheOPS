@@ -115,3 +115,31 @@ def test_chunk_only_replay_compares_actual_baseline(tmp_path, case_id):
     assert row["usability"]["chunk_input_matches_baseline"] is True
     baseline = next((output / "baseline-encoding").glob("*.mp3"))
     assert runner.identity(baseline)["sha256"] == row["encoded_input"]["sha256"]
+
+
+
+def test_recorded_matrix_keeps_coverage_and_completion_separate_from_timing():
+    """Actual nine-arm results share coverage/work gates, not measured CPU cost."""
+    archive = json.loads((ROOT / "docs/verification/real_metamorphic_reference_2026-11-04.json").read_text())
+    cases = archive["cases"]
+    assert len(cases) == 9 and archive["pairwise_comparison_count"] == 36
+
+    def observed(case):
+        return {"work": case["work"],
+                "verification_passed": case["verification_passed"],
+                "full_pipeline_observed": case["full_pipeline_observed"],
+                "full_pipeline_requirements_met": case["full_pipeline_requirements_met"]}
+
+    coverage = runner.coverage_state(cases[0]["coverage"])
+    completion = runner.completion_state(observed(cases[0]))
+    assert coverage["search_complete"] is False
+    assert coverage["data_status"] == "partial"
+    assert coverage["missing_data"] == ["historical_flight_scope_or_audible_border_region"]
+    assert completion["full_pipeline_requirements_met"] is True
+    assert completion["model_assessment_complete"] is False
+    assert completion["all_event_groups_considered"] is True
+    assert all(runner.coverage_state(case["coverage"]) == coverage for case in cases)
+    assert all(runner.completion_state(observed(case)) == completion for case in cases)
+    assert len({case["work"]["elapsed_s"] for case in cases}) > 1
+    assert len({case["work"]["event_groups_proposed"] for case in cases}) > 1
+    # These observed runtime and proposal-count differences are not completion changes.

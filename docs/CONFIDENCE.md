@@ -21,6 +21,12 @@ records the pair and measured discrepancy; it does not relabel events or assert
 that they came from the same aircraft. The heuristic is uncalibrated and may
 cause false inconclusive outcomes. A missing flag does not establish event
 independence, particularly with missing uncertainties or poorly aligned samples.
+The screen examines at most 8,192 event pairs per decision. Finding a possible
+overlap is sufficient to abstain. If the matched-event screen reaches its pair
+budget without a finding, it reports an incomplete assessment and abstains rather
+than treating unchecked pairs as independent. The broader proposal screen reports
+its assessment state in diagnostics; this cap does not limit event discovery or
+change candidate scores and rankings.
 
 ## Default policy and evidence
 
@@ -52,8 +58,19 @@ inferred from the fitted candidate. W5 supplies the validated original request
 window as `recording_start_window_s`; W3 profiles expose the tested span in
 `sensitivity.settings.clock_bounds_s`.
 
+When a candidate clock falls inside the supplied window, diagnostics also report
+`recording_start_window_fit`: the window width, fit offset from the midpoint,
+and distance to the nearest edge, all in seconds. These are geometric
+descriptions of the optimizer result, not a clock-error estimate or calibration.
+They do not change the score, ranking, or decision; the caller remains responsible
+for supplying a defensible clock window.
+
 Matched flyovers use one locked recording clock; harmonics count once and must
-map to the same flight. The explicit subset score may leave proposals unmatched
+map to the same flight. The minimum independent-flyover gate counts distinct
+matched flight segments: multiple acoustic groups assigned to one segment may
+contribute to its fit, but count once toward independent support. A one-flyover
+known-clock exception applies only to one matched harmonic group and one segment.
+The explicit subset score may leave proposals unmatched
 when `unmatched_event_ids` exactly enumerates the original discovered-minus-matched
 IDs. Entire harmonic groups must be retained. These omitted proposals remain
 unconfirmed sounds, not labelled aircraft misses or silently deleted evidence.

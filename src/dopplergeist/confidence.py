@@ -13,6 +13,9 @@ from pyproj import Geod
 from .contracts import utc_timestamp, validate_result
 
 
+MAX_HARMONIC_OVERLAP_PAIRS = 8192
+
+
 @dataclass(frozen=True)
 class DecisionPolicy:
     """Predeclared engineering limits, not fitted confidence calibration."""
@@ -41,13 +44,20 @@ def _near_tied(gap, margin):
     return gap <= margin or math.isclose(gap, margin, rel_tol=1e-12, abs_tol=1e-12)
 
 
-def _possible_harmonic_overlap(events):
-    """Flag an uncalibrated ambiguity; do not merge ridges or assert identity."""
+def _screen_harmonic_overlap(events, *, pair_budget=MAX_HARMONIC_OVERLAP_PAIRS):
+    """Bounded uncalibrated screen; do not merge ridges or assert identity."""
     from .discovery import _HARMONIC_RATIOS
     from .ridge_overlap import aligned_ridge_observations, reused_ridge_observations
 
+    total_pairs = len(events) * (len(events) - 1) // 2
+    pairs_examined = 0
+    overlap = None
     for index, first in enumerate(events):
-        for second in events[index + 1:]:
+        for second_index in range(index + 1, len(events)):
+            if pairs_examined >= pair_budget:
+                break
+            second = events[second_index]
+            pairs_examined += 1
             aligned = aligned_ridge_observations(first, second)
             if aligned is None:
                 continue
@@ -56,7 +66,8 @@ def _possible_harmonic_overlap(events):
             # later divergence fails the whole-ridge harmonic check below.
             reused = reused_ridge_observations(first, second, aligned=aligned)
             if reused is not None:
-                return reused
+                overlap = reused
+                break
             low, high = first, second
             times, x, y = aligned
             if np.median(x) > np.median(y):
@@ -77,11 +88,28 @@ def _possible_harmonic_overlap(events):
                 residual = float(np.quantile(np.abs(y - harmonic * x), 0.9))
                 tolerance = 2 * (high_uncertainty + harmonic * low_uncertainty)
             if math.isfinite(residual) and math.isfinite(tolerance) and residual <= tolerance:
-                return {"event_ids": [low["event_id"], high["event_id"]],
-                        "harmonic_ratio": harmonic, "observed_median_ratio": ratio,
-                        "aligned_samples": len(times), "residual_q90_hz": residual,
-                        "heuristic_tolerance_hz": tolerance}
-    return None
+                overlap = {"event_ids": [low["event_id"], high["event_id"]],
+                           "harmonic_ratio": harmonic, "observed_median_ratio": ratio,
+                           "aligned_samples": len(times), "residual_q90_hz": residual,
+                           "heuristic_tolerance_hz": tolerance}
+                break
+        if overlap is not None or pairs_examined >= pair_budget:
+            break
+    exhaustive = pairs_examined == total_pairs
+    return {
+        "overlap": overlap,
+        "assessment": {
+            "exhaustive": exhaustive,
+            "conclusive": overlap is not None or exhaustive,
+            "pairs_examined": pairs_examined,
+            "pair_budget": pair_budget,
+        },
+    }
+
+
+def _possible_harmonic_overlap(events):
+    """Return the legacy overlap flag while keeping its screen bounded."""
+    return _screen_harmonic_overlap(events)["overlap"]
 
 
 def _finite_search(evidence, diagnostics, candidates, group_counts, policy):
@@ -158,6 +186,57 @@ def _finite_search(evidence, diagnostics, candidates, group_counts, policy):
     return None, details
 
 
+def _candidate_evidence_summary(events, candidate, evidence):
+    """Summarize the ranked hypothesis before later gates can abstain early."""
+    lookup = {event["event_id"]: event for event in events}
+    matched_events = set(candidate["event_ids"])
+    group_flights = {}
+    flights_groups = {}
+    drift_limited_groups = set()
+    fit_summaries = []
+    for event_id, flight_id in zip(candidate["event_ids"], candidate["flight_ids"]):
+        event = lookup[event_id]
+        group_id = event.get("harmonic_group_id", event_id)
+        group_flights.setdefault(group_id, set()).add(flight_id)
+        flights_groups.setdefault(flight_id, set()).add(group_id)
+        fit = evidence.get(event_id)
+        if isinstance(fit, dict):
+            if fit.get("drift_at_bound") is True:
+                drift_limited_groups.add(group_id)
+            fit_summaries.append({
+                "event_id": event_id,
+                "harmonic_group_id": group_id,
+                "flight_id": flight_id,
+                **{name: fit[name] for name in
+                   ("rmse_hz", "outlier_fraction", "support_fraction", "drift_at_bound")
+                   if name in fit},
+            })
+    all_groups = {event.get("harmonic_group_id", event["event_id"]) for event in events}
+    matched_group_count = len(group_flights)
+    total_group_count = len(all_groups)
+    return {
+        "matched_event_ids": sorted(matched_events),
+        "unmatched_event_ids": sorted(set(lookup) - matched_events),
+        "matched_group_ids": sorted(group_flights),
+        "unmatched_group_ids": sorted(all_groups - set(group_flights)),
+        "matched_group_count": matched_group_count,
+        "total_group_count": total_group_count,
+        "matched_group_fraction": matched_group_count / total_group_count,
+        "distinct_flight_segments": len(flights_groups),
+        "flight_segments_with_multiple_groups": [
+            {"flight_id": flight_id, "group_ids": sorted(group_ids)}
+            for flight_id, group_ids in sorted(flights_groups.items()) if len(group_ids) > 1
+        ],
+        "groups_associated_with_multiple_flights": [
+            {"group_id": group_id, "flight_ids": sorted(flight_ids)}
+            for group_id, flight_ids in sorted(group_flights.items()) if len(flight_ids) > 1
+        ],
+        "drift_limited_group_ids": sorted(drift_limited_groups),
+        "drift_limited_group_count": len(drift_limited_groups),
+        "event_fits": fit_summaries,
+    }
+
+
 def decide_location(events, candidates, coverage, *, matching_diagnostics=None, policy=None):
     """Return status/reason_code/message/diagnostics without modifying inputs.
 
@@ -195,8 +274,40 @@ def decide_location(events, candidates, coverage, *, matching_diagnostics=None, 
     evidence = matching_diagnostics or {}
     if not isinstance(evidence, dict):
         return result("invalid_evidence", "Matching diagnostics must be a mapping.", "failed")
+
+    def interval(value):
+        return (isinstance(value, (list, tuple)) and len(value) == 2 and
+                all(not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) for v in value)
+                and value[0] <= value[1])
+
+    window = evidence.get("recording_start_window_s")
+    if candidates and interval(window):
+        fitted = utc_timestamp(candidates[0]["recording_start_utc"]).timestamp()
+        if window[0] <= fitted <= window[1]:
+            diagnostics["recording_start_window_s"] = list(window)
+            diagnostics["recording_start_window_fit"] = {
+                "window_width_s": float(window[1] - window[0]),
+                "fit_offset_from_midpoint_s": float(fitted - (window[0] + window[1]) / 2),
+                "fit_distance_to_nearest_edge_s": float(min(fitted - window[0], window[1] - fitted)),
+            }
     if not events:
         return result("no_doppler_events", "No supported Doppler event was discovered in the recording.")
+    if (not candidates or coverage is None or coverage["search_complete"] is not True
+            or coverage["data_status"] != "available" or coverage.get("missing_data")):
+        overlap_screen = _screen_harmonic_overlap(events)
+        diagnostics["possible_event_harmonic_overlap_assessment"] = overlap_screen["assessment"]
+        if overlap_screen["overlap"] is not None:
+            diagnostics["possible_event_harmonic_overlap"] = overlap_screen["overlap"]
+    if candidates:
+        candidate_summary = _candidate_evidence_summary(events, candidates[0], evidence)
+        diagnostics["candidate_evidence_summary"] = candidate_summary
+        diagnostics["matched_event_group_count"] = candidate_summary["matched_group_count"]
+        # Several acoustic groups can be assigned to the same recorded flight
+        # segment. They may improve its fit, but they do not establish separate
+        # flyovers for the independent-event confidence gate.
+        diagnostics["independent_event_groups"] = (
+            candidate_summary["distinct_flight_segments"]
+            if not candidate_summary["groups_associated_with_multiple_flights"] else None)
     if coverage is None:
         return result("coverage_unknown", "Search completion and flight-data coverage are not established.")
     if coverage["data_status"] == "unavailable":
@@ -215,41 +326,42 @@ def decide_location(events, candidates, coverage, *, matching_diagnostics=None, 
     for event, flight in zip(matched, best["flight_ids"]):
         key = event.get("harmonic_group_id", event["event_id"])
         if key in groups and groups[key][1] != flight:
+            diagnostics["independent_event_groups"] = None
             return result("inconsistent_harmonic_association", "Harmonics of one event map to different flight segments.")
         groups[key] = (event, flight)
-    diagnostics["independent_event_groups"] = len(groups)
+    diagnostics["matched_event_group_count"] = len(groups)
+    diagnostics["independent_event_groups"] = len({flight_id for _, flight_id in groups.values()})
     sensitivity = evidence.get("sensitivity", {})
-    window = evidence.get("recording_start_window_s")
-
-    def interval(value):
-        return (isinstance(value, (list, tuple)) and len(value) == 2 and
-                all(not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) for v in value)
-                and value[0] <= value[1])
-
     if window is not None:
         if not interval(window):
             return result("invalid_evidence", "The trusted recording-start window must have two finite ordered endpoints.", "failed")
         fitted = utc_timestamp(best["recording_start_utc"]).timestamp()
         if not window[0] <= fitted <= window[1]:
             return result("recording_clock_mismatch", "The fitted recording start lies outside the trusted recording window.")
-        diagnostics["recording_start_window_s"] = list(window)
     settings = sensitivity.get("settings", {}) if isinstance(sensitivity, dict) else {}
     tested_clock = settings.get("clock_bounds_s") if isinstance(settings, dict) else None
     known_clock = (interval(window) and interval(tested_clock) and
                    tested_clock[0] <= window[0] and tested_clock[1] >= window[1])
-    diagnostics["known_clock_single_event"] = bool(len(groups) == 1 and known_clock)
+    diagnostics["known_clock_single_event"] = bool(
+        len(groups) == 1 and diagnostics["independent_event_groups"] == 1 and known_clock)
     diagnostics["harmonic_overlap_screen"] = (
         "Uncalibrated aligned-sample heuristic; no flag does not establish independence.")
-    possible_overlap = _possible_harmonic_overlap(matched)
-    if possible_overlap is not None:
+    overlap_screen = _screen_harmonic_overlap(matched)
+    diagnostics["matched_group_overlap_assessment"] = overlap_screen["assessment"]
+    if overlap_screen["overlap"] is not None:
         diagnostics["matched_group_count"] = len(groups)
         diagnostics["independent_event_groups"] = None
-        diagnostics["possible_harmonic_overlap"] = possible_overlap
+        diagnostics["possible_harmonic_overlap"] = overlap_screen["overlap"]
         return result("insufficient_independent_events",
                       "Overlapping matched ridges may describe one flyover; independent events are not established.")
-    if len(groups) < policy.min_independent_events and not (len(groups) == 1 and
+    if not overlap_screen["assessment"]["conclusive"]:
+        diagnostics["independent_event_groups"] = None
+        return result("insufficient_independent_events",
+                      "The bounded ridge-overlap screen did not assess all matched-group pairs; independent events are not established.")
+    if diagnostics["independent_event_groups"] < policy.min_independent_events and not (len(groups) == 1 and
             policy.min_independent_events == 2 and known_clock):
-        return result("insufficient_independent_events", "Too few independent flyovers constrain location; harmonics count once.")
+        return result("insufficient_independent_events",
+                      "Too few independent flyovers constrain location; harmonics and acoustic groups sharing a flight segment count once.")
     unmatched = set(lookup) - set(best["event_ids"])
     supported = evidence.get("supported_event_ids")
     if supported is not None:

@@ -6,7 +6,7 @@
 }:
 python314.pkgs.buildPythonApplication {
   pname = "dopplergeist";
-  version = "0.1.0";
+  version = "0.1.2";
 
   pyproject = true;
 
@@ -17,6 +17,7 @@ python314.pkgs.buildPythonApplication {
   dependencies = with python314.pkgs; [
     numpy
     scipy
+    numba
     pandas
     soundfile
     pyproj

@@ -80,6 +80,14 @@ jobs:
               metrics = {row["metric"]: row for row in first["receipt_funnel"]["metrics"]}
               assert metrics["grid_points"]["known_sum"] == metrics["tracks"]["known_sum"] == 0
               assert metrics["cpa_rows"]["known_sum"] is None
+              trials = first["trial_classification"]
+              assert trials["status"] == "no_telemetry"
+              assert trials["selected_receipts"] == 256
+              assert trials["receipts_with_all_trial_counters"] == 0
+              assert trials["known_counters"] is None
+              assert trials["reported_trial_visits"] is None
+              assert trials["percent_rejected"] is None
+              assert trials["percent_unknown"] is None
               subprocess.run(command, check=True)
               refreshed = json.loads((root / "progress.json").read_text())
               assert refreshed["read_budget"].get("bytes_read", 0) == 0
@@ -87,6 +95,10 @@ jobs:
           assert hashlib.sha256(source.read_bytes()).hexdigest() == original
           print(f"Recorded checkpoint progress passed: 256 receipts, {expected} receiver points; cached refresh reads no input JSON.")
           PY
+      - name: Check metamorphic completion gates against real recorded outcomes
+        run: python -m pytest -q tests/test_real_metamorphic_runner.py::test_recorded_matrix_keeps_coverage_and_completion_separate_from_timing
+      - name: Check weak-fit guidance against recorded real ridge diagnostics
+        run: python -m pytest -q tests/test_real_guidance_fit.py
       - name: CLI smoke check
         run: dopplergeist --help
       - name: Check installed native validator and packaged browser assets

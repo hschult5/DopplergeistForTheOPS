@@ -137,6 +137,48 @@ def test_known_clock_single_event_requires_full_trusted_window_sensitivity():
     assert decide((events, candidates, coverage, diag))["reason_code"] == "recording_clock_mismatch"
 
 
+def test_incomplete_decision_reports_clock_window_fit_without_changing_reason():
+    from dopplergeist.contracts import utc_timestamp
+    events, candidates, coverage, diag = evidence()
+    coverage["search_complete"] = False
+    start = utc_timestamp(candidates[0]["recording_start_utc"]).timestamp()
+    baseline = decide_location(events, candidates, coverage, matching_diagnostics=diag)
+    before = deepcopy(candidates)
+    assert "recording_start_window_fit" not in baseline["diagnostics"]
+
+    diag["recording_start_window_s"] = [start - 20, start + 20]
+    result = decide_location(events, candidates, coverage, matching_diagnostics=diag)
+
+    assert baseline["status"] == result["status"] == "inconclusive"
+    assert baseline["reason_code"] == result["reason_code"] == "search_incomplete"
+    assert result["diagnostics"]["recording_start_window_fit"] == {
+        "window_width_s": 40.0,
+        "fit_offset_from_midpoint_s": 0.0,
+        "fit_distance_to_nearest_edge_s": 20.0,
+    }
+    assert candidates == before
+
+
+@pytest.mark.parametrize("side,expected_offset", [("lower", -20.0), ("upper", 20.0)])
+def test_clock_window_fit_reports_exact_edges(side, expected_offset):
+    from dopplergeist.contracts import utc_timestamp
+    events, candidates, coverage, diag = evidence()
+    coverage["search_complete"] = False
+    start = utc_timestamp(candidates[0]["recording_start_utc"]).timestamp()
+    diag["recording_start_window_s"] = (
+        [start, start + 40] if side == "lower" else [start - 40, start]
+    )
+
+    result = decide_location(events, candidates, coverage, matching_diagnostics=diag)
+
+    assert result["reason_code"] == "search_incomplete"
+    assert result["diagnostics"]["recording_start_window_fit"] == {
+        "window_width_s": 40.0,
+        "fit_offset_from_midpoint_s": expected_offset,
+        "fit_distance_to_nearest_edge_s": 0.0,
+    }
+
+
 def test_explicit_subset_keeps_unconfirmed_proposals_without_forcing_matches():
     events, candidates, coverage, diag = evidence()
     extra = deepcopy(events[1])

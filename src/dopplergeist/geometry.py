@@ -148,7 +148,8 @@ class Track:
             raise AcousticSupportError(self.id, "non_subsonic_motion",
                 emission_intervals_s=[[float(self.time[i]), float(self.time[i+1])] for i in indices])
 
-    def _cpa_interval_exclusion(self, observers, radius, c, sample_time, sample_position, max_step):
+    def _cpa_interval_exclusion(self, observers, radius, c, sample_time, sample_position, max_step,
+                                sample_range=None):
         """Prove bad native intervals cannot affect this sparse CPA query.
 
         Keep the original spline, sample lattice and global maximum sample
@@ -156,7 +157,9 @@ class Track:
         of every lattice edge touching a bad interval must also be outside the
         original KD-tree radius, so no such edge, sampled minimum or endpoint
         refinement can be used. A failed proof leaves whole-track CPA unknown.
-        This says nothing about later acoustic arrivals from those intervals.
+        A bounded query only needs proof for intervals whose affected edges
+        occur in its selected global-lattice slice. This says nothing about
+        later acoustic arrivals from those intervals.
         """
         methods = ("position", "speed_vector", "_unsupported_motion_intervals", "validate_motion_support")
         if (type(self) is not Track or any(name in self.__dict__ for name in methods)
@@ -173,6 +176,15 @@ class Track:
                 or sample_time[0] != self.time[0] or sample_time[-1] != self.time[-1]
                 or not np.all(np.diff(sample_time) > 0)):
             return None
+        edge_first, edge_stop = 0, len(sample_time)-1
+        if sample_range is not None:
+            if (type(sample_range) not in (tuple, list) or len(sample_range) != 2
+                    or any(type(value) is not int for value in sample_range)):
+                return None
+            sample_first, sample_last = sample_range
+            if not (0 <= sample_first <= sample_last <= len(sample_time)):
+                return None
+            edge_first, edge_stop = sample_first, max(sample_first, sample_last-1)
         indices = self._unsupported_motion_intervals(c)
         if not len(indices):
             return None
@@ -180,6 +192,34 @@ class Track:
         query_radius = float(np.nextafter(radius + 2 * max_step, np.inf))
         if not np.isfinite(query_radius):
             return None
+        outside_query = []
+        if sample_range is not None:
+            relevant = []
+            for first in range(0, len(indices), _MOTION_SUPPORT_INTERVAL_BATCH):
+                selected = indices[first:first+_MOTION_SUPPORT_INTERVAL_BATCH]
+                times = self.time[np.column_stack((selected, selected+1))]
+                tolerance = np.maximum(1e-7, 4*np.abs(np.spacing(np.maximum(np.abs(times[:, 0]),
+                                                                           np.abs(times[:, 1])))))
+                left = np.maximum(0, np.searchsorted(sample_time, times[:, 0]-tolerance, side="left")-1)
+                right = np.minimum(len(sample_time)-1,
+                                   np.searchsorted(sample_time, times[:, 1]+tolerance, side="right"))
+                keep = ((left < edge_stop) & (right > edge_first) & (edge_first < edge_stop))
+                if np.any(keep):
+                    relevant.append(selected[keep])
+                outside_query.extend(times[~keep].tolist())
+            indices = np.concatenate(relevant) if relevant else np.empty(0, dtype=int)
+            if not len(indices):
+                return {"track_id": self.id, "method": "outside_bounded_cpa_sample_edges",
+                        "emission_time_range_s": [float(self.time[0]), float(self.time[-1])],
+                        "emission_intervals_s": [],
+                        "outside_query_scope_intervals_s": [[float(a), float(b)] for a, b in outside_query],
+                        "sound_speed_mps": float(c), "max_distance_m": float(radius),
+                        "max_sample_step_m": float(max_step), "query_radius_m": query_radius,
+                        "hull_distance_lower_m": None, "edge_distance_lower_m": None,
+                        "sample_count": len(sample_time), "affected_sample_edges": 0,
+                        "sample_range": [sample_first, sample_last],
+                        "receiver_point_count": len(observers),
+                        "observer_box_ecef_m": [lower.tolist(), upper.tolist()]}
         affected_edges = np.zeros(len(sample_time)-1, dtype=bool)
         hull_lower = np.inf
         # No interval-by-receiver matrix: the receiver box encloses the actual
@@ -208,6 +248,9 @@ class Track:
                 left = max(0, int(np.searchsorted(sample_time, start-tolerance, side="left"))-1)
                 right = min(len(affected_edges), int(np.searchsorted(sample_time, end+tolerance, side="right")))
                 affected_edges[left:right] = True
+        if sample_range is not None:
+            affected_edges[:edge_first] = False
+            affected_edges[edge_stop:] = False
         edges = np.flatnonzero(affected_edges)
         if not len(edges):
             return None
@@ -219,13 +262,17 @@ class Track:
         distances = np.nextafter(np.linalg.norm(separation, axis=1)-margin, -np.inf)
         if not np.isfinite(distances).all() or not np.all(distances > query_radius):
             return None
-        return {"track_id": self.id, "method": "outside_native_hulls_and_sample_edges",
+        return {"track_id": self.id,
+                "method": ("outside_native_hulls_and_bounded_sample_edges" if sample_range is not None
+                           else "outside_native_hulls_and_sample_edges"),
                 "emission_time_range_s": [float(self.time[0]), float(self.time[-1])],
                 "emission_intervals_s": [[float(self.time[i]), float(self.time[i+1])] for i in indices],
+                "outside_query_scope_intervals_s": [[float(a), float(b)] for a, b in outside_query],
                 "sound_speed_mps": float(c), "max_distance_m": float(radius),
                 "max_sample_step_m": float(max_step), "query_radius_m": query_radius,
                 "hull_distance_lower_m": hull_lower, "edge_distance_lower_m": float(distances.min()),
                 "sample_count": len(sample_time), "affected_sample_edges": len(edges),
+                "sample_range": None if sample_range is None else [sample_first, sample_last],
                 "receiver_point_count": len(observers), "observer_box_ecef_m": [lower.tolist(), upper.tolist()]}
 
     def outside_observer_radius(self, observers, radius, c=343.0):

@@ -37,6 +37,10 @@ def check_contracts():
     conus_subset = [-90.0, 40.0, -87.0, 43.0]
     buesingen_subset = [8.66, 47.68, 8.72, 47.72]
     madrid_subset = [-4.16, 40.05, -2.97, 40.95]
+    paris_subset = [2.2, 48.8, 2.5, 48.95]
+    corsica_subset = [9.0, 41.3, 9.3, 41.5]
+    milan_subset = [9.05, 45.4, 9.3, 45.55]
+    lampedusa_subset = [12.5, 35.48, 12.65, 35.55]
     cases = (
         ("omitted search", None, {"coverage": "conus"}, "US"),
         ("legacy CONUS", {"coverage": "conus"}, {"coverage": "conus"}, "US"),
@@ -53,6 +57,20 @@ def check_contracts():
         ("Spain coverage", {"coverage": "spain"}, {"coverage": "spain"}, "ES"),
         ("Spain region", {"country": "ES", "bounds_wsen": madrid_subset},
          {"country": "ES", "coverage": "spain", "bounds_wsen": madrid_subset}, "ES"),
+        ("France country", {"country": "fr"}, {"country": "FR", "coverage": "france"}, "FR"),
+        ("France coverage", {"coverage": "france"}, {"coverage": "france"}, "FR"),
+        ("explicit France", {"country": "FR", "coverage": "france"},
+         {"country": "FR", "coverage": "france"}, "FR"),
+        ("France region", {"country": "FR", "bounds_wsen": paris_subset},
+         {"country": "FR", "coverage": "france", "bounds_wsen": paris_subset}, "FR"),
+        ("Corsica region", {"coverage": "france", "bounds_wsen": corsica_subset},
+         {"coverage": "france", "bounds_wsen": corsica_subset}, "FR"),
+        ("Italy country", {"country": "it"}, {"country": "IT", "coverage": "italy"}, "IT"),
+        ("Italy coverage", {"coverage": "italy"}, {"coverage": "italy"}, "IT"),
+        ("Italy region", {"country": "IT", "bounds_wsen": milan_subset},
+         {"country": "IT", "coverage": "italy", "bounds_wsen": milan_subset}, "IT"),
+        ("Lampedusa region", {"coverage": "italy", "bounds_wsen": lampedusa_subset},
+         {"coverage": "italy", "bounds_wsen": lampedusa_subset}, "IT"),
     )
     validated = {}
     for name, search, expected, country in cases:
@@ -74,7 +92,17 @@ def check_contracts():
         {"country": "DE", "coverage": "conus"},
         {"country": "US", "coverage": "germany"},
         {"country": "DE", "coverage": "spain"},
-        {"country": "FR"},
+        {"country": "PT"},
+        {"country": "IT", "coverage": "france"},
+        {"country": "FR", "coverage": "italy"},
+        {"country": "IT", "bounds_wsen": madrid_subset},
+        {"country": "FR", "coverage": "conus"},
+        {"country": "FR", "coverage": "spain"},
+        {"country": "DE", "coverage": "france"},
+        {"country": "FR", "bounds_wsen": conus_subset},
+        # French Guiana and Reunion are outside the metropolitan profile.
+        {"country": "FR", "bounds_wsen": [-52.5, 4.8, -52.2, 5.0]},
+        {"country": "FR", "bounds_wsen": [55.3, -21.3, 55.6, -21.0]},
         {"coverage": "custom"},
         {"country": None},
         {"coverage": None},
@@ -94,8 +122,8 @@ def check_contracts():
             raise CheckFailure(f"Invalid search was accepted: {search!r}")
 
     catalog = public_profiles()
-    require(len(catalog) == 3 and {p["country"] for p in catalog} == {"US", "DE", "ES"},
-            "Capabilities must describe exactly the supported US, DE and ES profiles")
+    require(len(catalog) == 5 and {p["country"] for p in catalog} == {"US", "DE", "ES", "FR", "IT"},
+            "Capabilities must describe exactly the supported US, DE, ES, FR and IT profiles")
     for item in catalog:
         profile = profile_for_search({"country": item["country"]})
         require(item["coverage"] == profile.coverage and item["crs"] == profile.crs
@@ -106,6 +134,10 @@ def check_contracts():
             "Germany must use its declared UTM 32N search CRS")
     require(profile_for_search({"country": "ES"}).crs == "EPSG:6933",
             "Spain must use its declared global equal-area search CRS")
+    require(profile_for_search({"country": "FR"}).crs == "EPSG:2154",
+            "Metropolitan France must use its declared Lambert-93 search CRS")
+    require(profile_for_search({"country": "IT"}).crs == "EPSG:7794",
+            "Italy must use its declared RDN2008 / Italy zone (E-N) search CRS")
     print(f"PASS requests: {len(cases)} normalization/JSON round-trip cases; "
           f"{len(rejected)} invalid declarations rejected; profile catalog agrees")
     return validated
@@ -211,6 +243,59 @@ def check_spain_grid(validated):
           "no country polygon applied")
 
 
+def check_envelope_grids(cache_root, validated, profile_case, places, regions, label):
+    import numpy as np
+    from pyproj import CRS, Transformer
+    from dopplergeist.geography import profile_for_search, receiver_mask_for_search
+    from dopplergeist.tiled_search import _grid_extent, _tile_coordinates
+
+    profile = profile_for_search(validated[profile_case]["search"])
+    west, south, east, north = profile.bounds_wsen
+    for place, lon, lat in places:
+        require(west < lon < east and south < lat < north, f"{label} envelope must include {place}")
+    area = CRS(profile.crs).area_of_use
+    require(area.west <= west < east <= area.east and area.south <= south < north <= area.north,
+            f"{label} envelope must stay within the search CRS area of use")
+    forward = Transformer.from_crs("EPSG:4326", profile.crs, always_xy=True)
+    for name in regions:
+        search = validated[name]["search"]
+        require(receiver_mask_for_search(search, cache_root=cache_root, offline=True) is None,
+                f"{name}: the bounding envelope must not acquire a German polygon")
+        bounds = search["bounds_wsen"]
+        for spacing in (2000.0, 250.0):
+            xmin, ymin, xmax, ymax = _grid_extent(bounds, spacing, profile.crs)
+            receivers = _tile_coordinates((xmin, ymin, xmax + 1, ymax + 1), spacing,
+                                          bounds, profile.crs)
+            require(len(receivers) > 0, f"{name}: no {spacing:g} m receivers inside the selected bounds")
+            x, y = forward.transform(receivers.lon.to_numpy(), receivers.lat.to_numpy())
+            require(np.isfinite(x).all() and np.isfinite(y).all()
+                    and np.allclose(x, receivers.x.to_numpy(), rtol=0, atol=1e-5)
+                    and np.allclose(y, receivers.y.to_numpy(), rtol=0, atol=1e-5),
+                    f"{name}: grid x/y disagree with {profile.crs}")
+            w, s, e, n = bounds
+            require(bool(np.all((receivers.lon >= w) & (receivers.lon <= e)
+                                & (receivers.lat >= s) & (receivers.lat <= n))),
+                    f"{name}: receiver grid escaped the selected bounds")
+            print(f"PASS {name}: {len(receivers)} receivers at {spacing:g} m in {profile.crs}; no country polygon")
+
+
+def check_france_grids(cache_root, validated):
+    # Rounded real landmarks check the envelope, not recording-location truth.
+    check_envelope_grids(cache_root, validated, "France country",
+                         (("Brest", -4.49, 48.39), ("Dunkirk", 2.38, 51.04),
+                          ("Paris", 2.35, 48.86), ("Bonifacio, Corsica", 9.16, 41.39)),
+                         ("France region", "Corsica region"), "France")
+
+
+def check_italy_grids(cache_root, validated):
+    # Rounded real landmarks at the national extremes check the envelope only.
+    check_envelope_grids(cache_root, validated, "Italy country",
+                         (("Vetta d'Italia", 12.18, 47.09), ("Aosta valley west", 6.63, 45.83),
+                          ("Otranto", 18.52, 40.14), ("Lampedusa", 12.6, 35.5),
+                          ("Cagliari, Sardinia", 9.11, 39.22), ("Palermo, Sicily", 13.36, 38.12)),
+                         ("Italy region", "Lampedusa region"), "Italy")
+
+
 def check_border_grid(mask, validated):
     import numpy as np
     from pyproj import Transformer
@@ -304,6 +389,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         validated = check_contracts()
+        check_france_grids(args.cache_root, validated)
+        check_italy_grids(args.cache_root, validated)
         mask = check_mask(args.cache_root, args.online, validated)
         check_spain_grid(validated)
         check_border_grid(mask, validated)

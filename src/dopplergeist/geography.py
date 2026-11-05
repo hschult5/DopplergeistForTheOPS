@@ -2,8 +2,8 @@
 
 Country masks restrict receiver locations, never aircraft trajectories.  The US
 profile deliberately retains the historical CONUS rectangle and CRS.  Germany
-uses BKG VG250 land geometry in its native ETRS89 / UTM 32N coordinates.  Spain
-uses an outer geographic envelope and global equal-area projection; the caller's
+uses BKG VG250 land geometry in its native ETRS89 / UTM 32N coordinates. Spain,
+metropolitan France and Italy use outer geographic envelopes; the caller's
 declared bounds select the actual receiver search region.
 """
 from copy import deepcopy
@@ -34,6 +34,10 @@ _PROFILES = {
                         (5.5, 47.0, 15.5, 55.2), "EPSG:32632"),
     "ES": SearchProfile("ES", "spain", "Spain (all territories; bounding envelope)",
                         (-18.2, 27.5, 4.5, 43.9), "EPSG:6933"),
+    "FR": SearchProfile("FR", "france", "France (metropolitan; bounding envelope)",
+                        (-5.5, 41.2, 10.0, 51.2), "EPSG:2154"),
+    "IT": SearchProfile("IT", "italy", "Italy (including Sicily and Sardinia; bounding envelope)",
+                        (6.6, 35.4, 18.6, 47.1), "EPSG:7794"),
 }
 _COVERAGE_COUNTRIES = {p.coverage: code for code, p in _PROFILES.items()}
 
@@ -70,10 +74,10 @@ def profile_for_search(search=None):
     coverage = search.get("coverage")
     if "country" in search:
         if not isinstance(country, str) or country.upper() not in _PROFILES:
-            raise ValueError("Supported countries are US (CONUS), DE (Germany) and ES (Spain)")
+            raise ValueError("Supported countries are US (CONUS), DE (Germany), ES (Spain), FR (metropolitan France) and IT (Italy)")
         country = country.upper()
     if "coverage" in search and (not isinstance(coverage, str) or coverage not in _COVERAGE_COUNTRIES):
-        raise ValueError("Supported coverage values are conus (US/CONUS), germany (DE) and spain (ES)")
+        raise ValueError("Supported coverage values are conus (US/CONUS), germany (DE), spain (ES), france (FR) and italy (IT)")
     if country is None:
         country = _COVERAGE_COUNTRIES.get(coverage, "US")
     profile = _PROFILES[country]

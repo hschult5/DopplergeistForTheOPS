@@ -458,11 +458,18 @@ def valid_interval_cpa_support(item, configuration):
         return Decimal.from_float(float(value))
 
     try:
-        if (not isinstance(item, dict) or item.get("method") != "outside_native_hulls_and_sample_edges"
+        method = item.get("method") if isinstance(item, dict) else None
+        spatial_methods = {"outside_native_hulls_and_sample_edges",
+                           "outside_native_hulls_and_bounded_sample_edges"}
+        scoped_methods = {"outside_native_hulls_and_bounded_sample_edges",
+                          "outside_bounded_cpa_sample_edges"}
+        allowed_methods = spatial_methods | {"outside_bounded_cpa_sample_edges"}
+        if (method not in allowed_methods
                 or not isinstance(item["track_id"], str) or not item["track_id"]
-                or not all(type(item.get(key)) is int and item[key] > 0
-                           for key in ("sample_count", "affected_sample_edges", "receiver_point_count"))
-                or not item["affected_sample_edges"] < item["sample_count"]
+                or type(item.get("sample_count")) is not int or item["sample_count"] <= 0
+                or type(item.get("affected_sample_edges")) is not int or item["affected_sample_edges"] < 0
+                or type(item.get("receiver_point_count")) is not int or item["receiver_point_count"] <= 0
+                or item["affected_sample_edges"] >= item["sample_count"]
                 or item["sample_count"] > configuration["budget"]["max_track_samples_per_tile"]):
             return False
         with localcontext() as ctx:
@@ -474,20 +481,44 @@ def valid_interval_cpa_support(item, configuration):
             query_radius = number(item["query_radius_m"])
             if (c <= 0 or radius <= 0 or step <= 0 or maximum_step < 0
                     or number(item["sound_speed_mps"]) != c or number(item["max_distance_m"]) != radius
-                    or number(item["sample_step_s"]) != step or query_radius < radius + 2*maximum_step
-                    or number(item["hull_distance_lower_m"]) <= radius
-                    or number(item["edge_distance_lower_m"]) <= query_radius):
+                    or number(item["sample_step_s"]) != step or query_radius < radius + 2*maximum_step):
                 return False
             first, last = map(number, item["emission_time_range_s"])
             intervals = item["emission_intervals_s"]
-            if first >= last or not isinstance(intervals, list) or not intervals:
+            outside = item.get("outside_query_scope_intervals_s", [])
+            if first >= last or not isinstance(intervals, list) or not isinstance(outside, list):
                 return False
-            previous = first
-            for pair in intervals:
-                start, end = map(number, pair)
-                if not previous <= start < end <= last:
+            for interval_list in (intervals, outside):
+                previous = first
+                for pair in interval_list:
+                    start, end = map(number, pair)
+                    if not previous <= start < end <= last:
+                        return False
+                    previous = end
+            if method in scoped_methods:
+                sample_range = item["sample_range"]
+                receive_bounds = item["receive_time_bounds_s"]
+                if (not isinstance(sample_range, list) or len(sample_range) != 2
+                        or any(type(value) is not int for value in sample_range)
+                        or not 0 <= sample_range[0] <= sample_range[1] <= item["sample_count"]):
                     return False
-                previous = end
+                receive_lower, receive_upper = map(number, receive_bounds)
+                if receive_lower > receive_upper:
+                    return False
+                if method == "outside_bounded_cpa_sample_edges":
+                    if (intervals or not outside or item["affected_sample_edges"] != 0
+                            or item["hull_distance_lower_m"] is not None
+                            or item["edge_distance_lower_m"] is not None):
+                        return False
+                elif (not intervals or item["affected_sample_edges"] == 0
+                      or number(item["hull_distance_lower_m"]) <= radius
+                      or number(item["edge_distance_lower_m"]) <= query_radius):
+                    return False
+            elif (not intervals or not isinstance(outside, list)
+                  or outside or item["affected_sample_edges"] == 0
+                  or number(item["hull_distance_lower_m"]) <= radius
+                  or number(item["edge_distance_lower_m"]) <= query_radius):
+                return False
             lower, upper = item["observer_box_ecef_m"]
             return (len(lower) == len(upper) == 3
                     and all(number(lo) <= number(hi) for lo, hi in zip(lower, upper)))

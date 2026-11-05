@@ -132,10 +132,10 @@ class RetentionLedger:
                         occurrences INTEGER, duplicates INTEGER, kept TEXT);
                     CREATE TABLE IF NOT EXISTS records(stage TEXT, mode_id TEXT, score REAL,
                         groups_count INTEGER, kind TEXT, seed TEXT, PRIMARY KEY(stage,mode_id));
-                    CREATE INDEX IF NOT EXISTS mode_index ON records(mode_id);
                     CREATE TABLE IF NOT EXISTS bounds(stage TEXT, bound_id TEXT, upper_score REAL,
                         groups_count INTEGER, detail TEXT, PRIMARY KEY(stage,bound_id));
-                    CREATE INDEX IF NOT EXISTS bound_index ON bounds(bound_id);
+                    DROP INDEX IF EXISTS mode_index;
+                    DROP INDEX IF EXISTS bound_index;
                 """)
                 # Saved stages are checksum-verified before reuse and evidence.
                 # Opening a national ledger must not scan its entire database.

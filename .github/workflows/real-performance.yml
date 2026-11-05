@@ -54,10 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Install runtime and source-tree extensions
@@ -230,7 +230,7 @@ jobs:
           print(json.dumps({"profile_summary": str(output), "excluded_from_timing_medians": True,
                             "top_10": records[:10]}, indent=2))
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: real-performance-summary
@@ -244,7 +244,7 @@ jobs:
             results/current-point-profile-stats.json
           if-no-files-found: ignore
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: real-performance-failure-diagnostics
@@ -257,10 +257,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Install runtime and source-tree extensions
@@ -361,7 +361,7 @@ jobs:
               stream.write("\n")
           print(json.dumps({"passed": True, "pairs": len(reports), "medians": medians, "speedup": summary["speedup"]}, indent=2))
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: real-regional-summary
@@ -374,7 +374,7 @@ jobs:
             results/regional-comparison.json
           if-no-files-found: ignore
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: real-regional-failure-diagnostics
@@ -397,10 +397,10 @@ jobs:
       PYTHONPATH: src
       BASELINE_REF: aa3dff686c989524daa20c081a816b792d9c8890
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Install matched runtime
@@ -539,7 +539,7 @@ jobs:
           print(json.dumps(result, indent=2, allow_nan=False))
           print("BOUNDED_HTTP_COMPARISON_END")
           REPORT
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: bounded-http-comparison

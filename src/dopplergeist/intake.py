@@ -73,6 +73,7 @@ class IntakeRecording:
     samples_path: Path
     metadata: dict
     diagnostics: dict
+    source_path: Path | None = None
 
     @property
     def time_status(self):
@@ -192,7 +193,7 @@ def intake_recording(source, output_dir, *, time_window=None, sample_rate_hz=400
             target.write(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
         with (output / "intake.json").open("x") as target:
             target.write(json.dumps(diagnostics, indent=2, allow_nan=False) + "\n")
-        return IntakeRecording(samples_path, metadata, diagnostics)
+        return IntakeRecording(samples_path, metadata, diagnostics, source)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

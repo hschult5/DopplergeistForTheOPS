@@ -48,6 +48,9 @@ different result was saved.
 | Missing recording time and required `time_window` | Supply a defensible UTC window for the original recording start. |
 | No discovered events for a missing-time/no-events result | More of the original recording may contain a usable event. |
 | Too few matched acoustic groups | Explain the observed group count; a separate flyover may provide more evidence. |
+| Measured track support below the saved decision threshold | Identify the affected acoustic event, its support fraction and the recorded policy threshold. |
+| Measured acoustic RMSE or outlier fraction above the saved decision threshold | Identify the affected event, offending measurement and threshold. This is a failed association, not a location estimate. |
+| Recorded source-frequency drift at its bound | Identify the affected event and report the bounded fit as unresolved. |
 | Possible harmonic or reused-ridge overlap | Explain that group independence is unestablished; do not assert aircraft identity. |
 | Partial required data or explicit missing identifiers | Restore the identified flight or terrain data. |
 | Unavailable data with a recorded acquisition/configuration limit | Inspect that limit before retrying; unavailability alone does not prove an archive gap. |

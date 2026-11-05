@@ -28,9 +28,9 @@ wide after any edit.
 Render previews with librsvg:
 
 ```bash
-rsvg-convert assets/dopplergeist-banner.svg \
-  -o assets/dopplergeist-banner-preview.png
-rsvg-convert -w 600 assets/dopplergeist-banner.svg -o /tmp/dopplergeist-banner-600.png
+rsvg-convert docs/assets/dopplergeist-banner.svg \
+  -o docs/assets/dopplergeist-banner-preview.png
+rsvg-convert -w 600 docs/assets/dopplergeist-banner.svg -o /tmp/dopplergeist-banner-600.png
 ```
 
 ## Livermore demonstration
@@ -38,10 +38,10 @@ rsvg-convert -w 600 assets/dopplergeist-banner.svg -o /tmp/dopplergeist-banner-6
 `livermore-real-demo.png` shows a real recording and a configured search over
 published flight data. It uses USGS / USDA NAIP imagery and data from Praveen
 Pathak's [Zenodo dataset](https://doi.org/10.5281/zenodo.23424278) (CC BY 4.0).
-[Setup, limitations and rendering instructions](../docs/LIVERMORE_DEMO.md)
+[Setup, limitations and rendering instructions](../LIVERMORE_DEMO.md)
 explain the inferred reference and the incomplete model assessment.
 
 `livermore-automatic-mp3.png` depicts the separate automatic MP3 upload and
 its retained aircraft-search scores, using the same USGS / USDA NAIP imagery.
-The [all-aircraft case study](../docs/LIVERMORE_DEMO.md#all-aircraft-archive-mp3-ranking)
+The [all-aircraft case study](../LIVERMORE_DEMO.md#all-aircraft-archive-mp3-ranking)
 describes the selected map points, inferred reference, and run limitations.

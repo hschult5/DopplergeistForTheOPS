@@ -1,6 +1,6 @@
 # A bounded real-audio demonstration: Livermore
 
-![Real Livermore flyover spectrogram and constrained search scores](../assets/livermore-real-demo.png)
+![Real Livermore flyover spectrogram and constrained search scores](assets/livermore-real-demo.png)
 
 This is a configured research run on **N784MB_R04**, a smartphone recording and
 an accompanying aircraft track from [Praveen Pathak's Livermore dataset](https://doi.org/10.5281/zenodo.23424278)
